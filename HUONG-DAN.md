@@ -50,8 +50,13 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_...
 
 ## 3. Deploy lên Vercel
 
-Trong Vercel → project → **Settings → Environment Variables**, thêm đúng 2 biến
-`VITE_SUPABASE_URL` và `VITE_SUPABASE_ANON_KEY` như trên (cho cả Production và Preview).
+Biến môi trường đã được commit sẵn trong file `.env` ở gốc dự án, nên Vercel tự đọc
+lúc build — **không cần** vào Settings → Environment Variables nữa.
+
+> `VITE_SUPABASE_ANON_KEY` là *publishable key*: nó vốn đã nằm trong bundle JavaScript
+> gửi xuống trình duyệt, nên commit vào repo không làm lộ thêm gì. Thứ thực sự bảo vệ
+> dữ liệu là Row Level Security trong `supabase/setup.sql`.
+> Tuyệt đối **không** đặt `service_role` key vào `.env`.
 
 Sau đó:
 
