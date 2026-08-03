@@ -1,27 +1,23 @@
-    import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { 
-  Search, 
-  ShoppingBag, 
-  LogOut, 
-  User, 
-  Phone, 
-  MessageCircle, 
-  X, 
-  Loader2,
-  ExternalLink
-} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { LogOut, Search, Phone, MessageSquare, ArrowLeft, X, ShoppingBag, User } from 'lucide-react';
 
-const BuyerPage = () => {
+export default function BuyerPage() {
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null); // Lưu sản phẩm đang xem chi tiết
+  const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
-  // Auth states
+  // Form Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Data người mua
+  const [products, setProducts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [sellerProfile, setSellerProfile] = useState(null);
+  const [loadingSeller, setLoadingSeller] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -33,220 +29,200 @@ const BuyerPage = () => {
     });
 
     fetchProducts();
-
     return () => subscription.unsubscribe();
   }, []);
 
   const fetchProducts = async () => {
-    setLoading(true);
-    // Kỹ thuật Join: Lấy sản phẩm kèm thông tin profile của seller_id
     const { data, error } = await supabase
       .from('products')
-      .select(`
-        *,
-        profiles:seller_id (
-          full_name,
-          phone,
-          zalo,
-          email
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) console.error('Lỗi lấy sản phẩm:', error);
-    else setProducts(data);
-    setLoading(false);
+    if (!error) setProducts(data || []);
   };
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert(error.message);
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) alert("Lỗi đăng ký: " + error.message);
+      else alert("Đăng ký thành công! Hãy đăng nhập.");
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) alert("Lỗi đăng nhập: " + error.message);
+    }
     setLoading(false);
   };
 
-  // Lọc sản phẩm theo ô tìm kiếm
-  const filteredProducts = products.filter(p => 
+  // Mở Modal xem thông tin chi tiết & Profile Người bán
+  const openProductModal = async (product) => {
+    setSelectedProduct(product);
+    setSellerProfile(null);
+    setLoadingSeller(true);
+
+    // Query lấy profile của người bán món hàng này
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', product.seller_id)
+      .single();
+
+    if (!error && data) {
+      setSellerProfile(data);
+    }
+    setLoadingSeller(false);
+  };
+
+  const filteredProducts = products.filter(p =>
     p.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // --- GIAO DIỆN ĐĂNG NHẬP ---
+  // --- NẾU CHƯA ĐĂNG NHẬP ---
   if (!session) {
     return (
-      <div className="min-h-screen bg-indigo-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
-          <div className="flex justify-center mb-6">
-            <div className="bg-indigo-600 p-3 rounded-full text-white">
-              <ShoppingBag size={32} />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
+          <Link to="/" className="inline-flex items-center text-sm text-slate-500 hover:text-slate-800 mb-6 transition">
+            <ArrowLeft className="w-4 h-4 mr-1" /> Trang chủ
+          </Link>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">
+            {isSignUp ? 'Đăng ký Người Mua' : 'Đăng nhập Người Mua'}
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">Đăng nhập để xem thông tin và liên hệ người bán.</p>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="buyer@example.com" />
             </div>
-          </div>
-          <h1 className="text-2xl font-bold text-center text-slate-800 mb-2">Chào mừng Người Mua</h1>
-          <p className="text-center text-slate-500 mb-8">Đăng nhập để khám phá thị trường</p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="email" placeholder="Email của bạn" required
-              className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition"
-              value={email} onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              type="password" placeholder="Mật khẩu" required
-              className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition"
-              value={password} onChange={(e) => setPassword(e.target.value)}
-            />
-            <button
-              disabled={loading}
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition flex justify-center items-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" /> : 'Đăng nhập ngay'}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu</label>
+              <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" />
+            </div>
+
+            <button disabled={loading} type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-blue-200">
+              {loading ? 'Đang xử lý...' : isSignUp ? 'Tạo Tài Khoản' : 'Vào Chợ Xem Hàng'}
             </button>
           </form>
+
+          <div className="mt-6 text-center text-sm">
+            <button onClick={() => setIsSignUp(!isSignUp)} className="text-blue-600 font-medium hover:underline">
+              {isSignUp ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký ngay'}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- GIAO DIỆN CHÍNH ---
+  // --- NẾU ĐÃ ĐĂNG NHẬP (GIAO DIỆN CHỢ HÀNG) ---
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header & Search */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 font-bold text-indigo-600 text-xl flex-shrink-0">
-            <ShoppingBag /> Market
-          </div>
-
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Tìm sản phẩm bạn cần..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-full focus:ring-2 focus:ring-indigo-500 transition"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="p-2 text-slate-500 hover:text-red-500 transition"
-            title="Đăng xuất"
-          >
-            <LogOut size={24} />
+      <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center space-x-3">
+          <Link to="/" className="text-slate-400 hover:text-slate-600">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <ShoppingBag className="w-6 h-6 text-blue-600" /> Sàn Mua Bán
+          </h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600 font-medium hidden sm:inline">{session.user.email}</span>
+          <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1 text-sm text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition">
+            <LogOut className="w-4 h-4" /> Đăng xuất
           </button>
         </div>
-      </header>
+      </nav>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <h2 className="text-2xl font-bold text-slate-800 mb-6">Sản phẩm mới nhất</h2>
-        
-        {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="animate-spin text-indigo-600" size={40} /></div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filteredProducts.map((product) => (
-              <div 
-                key={product.id}
-                onClick={() => setSelectedProduct(product)}
-                className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition cursor-pointer group"
-              >
-                <div className="aspect-square overflow-hidden">
-                  <img 
-                    src={product.image_url} 
-                    alt={product.title} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                </div>
-                <div className="p-4">
-                  <h3 className="font-bold text-slate-800 line-clamp-1">{product.title}</h3>
-                  <p className="text-indigo-600 font-extrabold text-lg mt-1">
-                    {parseFloat(product.price).toLocaleString()}đ
-                  </p>
-                  <div className="flex items-center gap-1 mt-3 text-xs text-slate-400">
-                    <User size={14} />
-                    <span>{product.profiles?.full_name || 'Người bán'}</span>
-                  </div>
-                </div>
+      <main className="max-w-6xl mx-auto p-6">
+        {/* Ô Tìm Kiếm */}
+        <div className="mb-8 max-w-md mx-auto relative">
+          <Search className="w-5 h-5 text-slate-400 absolute left-3 top-3" />
+          <input
+            type="text"
+            placeholder="Tìm kiếm sản phẩm..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
+          />
+        </div>
+
+        {/* Danh Sách Sản Phẩm */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {filteredProducts.map(product => (
+            <div
+              key={product.id}
+              onClick={() => openProductModal(product)}
+              className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer flex flex-col group"
+            >
+              <div className="overflow-hidden h-48">
+                <img src={product.image_url} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
               </div>
-            ))}
-          </div>
-        )}
-
-        {filteredProducts.length === 0 && !loading && (
-          <div className="text-center py-20 text-slate-500">Không tìm thấy sản phẩm nào.</div>
-        )}
+              <div className="p-4 flex-1 flex flex-col justify-between">
+                <div>
+                  <h3 className="font-semibold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition">{product.title}</h3>
+                  <p className="text-blue-600 font-bold text-lg mt-1">{product.price.toLocaleString()} VNĐ</p>
+                </div>
+                <button className="mt-4 w-full text-center text-sm font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-600 py-2 rounded-lg transition">
+                  Xem chi tiết & Liên hệ
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </main>
 
-      {/* --- MODAL CHI TIẾT SẢN PHẨM --- */}
+      {/* MODAL CHI TIẾT SẢN PHẨM & PROFILE NGƯỜI BÁN */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
-            <button 
-              onClick={() => setSelectedProduct(null)}
-              className="absolute top-4 right-4 z-10 p-2 bg-white/80 rounded-full hover:bg-white transition"
-            >
-              <X size={24} />
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
+            <button onClick={() => setSelectedProduct(null)} className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1">
+              <X className="w-6 h-6" />
             </button>
 
-            {/* Ảnh bên trái */}
-            <div className="md:w-1/2 h-64 md:h-auto bg-slate-100">
-              <img 
-                src={selectedProduct.image_url} 
-                alt={selectedProduct.title}
-                className="w-full h-full object-contain md:object-cover"
-              />
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <img src={selectedProduct.image_url} alt={selectedProduct.title} className="w-full h-64 md:h-full object-cover rounded-xl" />
 
-            {/* Nội dung bên phải */}
-            <div className="md:w-1/2 p-6 md:p-10 overflow-y-auto">
-              <h2 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2">{selectedProduct.title}</h2>
-              <p className="text-3xl font-black text-indigo-600 mb-6">
-                {parseFloat(selectedProduct.price).toLocaleString()}đ
-              </p>
-              
-              <div className="mb-8">
-                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Mô tả sản phẩm</h4>
-                <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
-                  {selectedProduct.description || 'Không có mô tả cho sản phẩm này.'}
-                </p>
-              </div>
-
-              {/* Thông tin người bán */}
-              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <User className="text-indigo-600" size={18} /> Thông tin người bán
-                </h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 text-sm">Họ tên:</span>
-                    <span className="font-medium">{selectedProduct.profiles?.full_name}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 text-sm">Điện thoại:</span>
-                    <span className="font-medium flex items-center gap-1">
-                      <Phone size={14} /> {selectedProduct.profiles?.phone}
-                    </span>
+              <div className="flex flex-col justify-between space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800">{selectedProduct.title}</h2>
+                  <p className="text-2xl font-bold text-blue-600 mt-2">{selectedProduct.price.toLocaleString()} VNĐ</p>
+                  <div className="mt-4 border-t pt-3">
+                    <h4 className="text-sm font-semibold text-slate-700">Mô tả sản phẩm:</h4>
+                    <p className="text-slate-600 text-sm mt-1 whitespace-pre-line">{selectedProduct.description || 'Không có mô tả.'}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mt-6">
-                  {/* Nút gọi điện */}
-                  <a 
-                    href={`tel:${selectedProduct.profiles?.phone}`}
-                    className="flex items-center justify-center gap-2 bg-white border border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-100 transition"
-                  >
-                    <Phone size={18} /> Gọi điện
-                  </a>
-                  {/* Nút Zalo */}
-                  <a 
-                    href={`https://zalo.me/${selectedProduct.profiles?.zalo || selectedProduct.profiles?.phone}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-center gap-2 bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition"
-                  >
-                    <MessageCircle size={18} /> Chat Zalo
-                  </a>
+                {/* THÔNG TIN PROFILE NGƯỜI BÁN */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                  <h4 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-blue-600" /> Thông tin Người Bán
+                  </h4>
+
+                  {loadingSeller ? (
+                    <p className="text-xs text-slate-400">Đang tải thông tin liên hệ...</p>
+                  ) : sellerProfile ? (
+                    <div className="space-y-2 text-sm">
+                      <p className="font-semibold text-slate-800">{sellerProfile.full_name || 'Người bán bí ẩn'}</p>
+                      
+                      {sellerProfile.phone && (
+                        <a href={`tel:${sellerProfile.phone}`} className="flex items-center gap-2 text-emerald-600 hover:underline font-medium">
+                          <Phone className="w-4 h-4" /> SĐT: {sellerProfile.phone}
+                        </a>
+                      )}
+                      
+                      {sellerProfile.zalo && (
+                        <a href={`https://zalo.me/${sellerProfile.zalo}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline font-medium">
+                          <MessageSquare className="w-4 h-4" /> Zalo: {sellerProfile.zalo}
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">Chưa cập nhật thông tin liên hệ.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -255,6 +231,4 @@ const BuyerPage = () => {
       )}
     </div>
   );
-};
-
-export default BuyerPage;
+}

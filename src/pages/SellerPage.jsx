@@ -1,97 +1,97 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { 
-  PlusCircle, 
-  LogOut, 
-  Package, 
-  Image as ImageIcon, 
-  Loader2, 
-  LayoutDashboard,
-  UploadCloud,
-  Phone,
-  User
-} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Upload, LogOut, Package, ArrowLeft, PlusCircle, User, Phone, MessageSquare } from 'lucide-react';
 
-const SellerPage = () => {
-  const [loading, setLoading] = useState(false);
+export default function SellerPage() {
   const [session, setSession] = useState(null);
-  const [products, setProducts] = useState([]);
-  
-  // Auth states
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+
+  // Form Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [zalo, setZalo] = useState('');
 
-  // Product form states
+  // Form Sản phẩm & Danh sách
+  const [products, setProducts] = useState([]);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [imageFile, setImageFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    // Kiểm tra session hiện tại
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchProducts(session.user.id);
+      if (session) fetchMyProducts(session.user.id);
     });
 
-    // Lắng nghe thay đổi auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProducts(session.user.id);
+      if (session) fetchMyProducts(session.user.id);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProducts = async (userId) => {
+  // Đăng ký / Đăng nhập
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } }
+      });
+
+      if (error) {
+        alert("Lỗi đăng ký: " + error.message);
+      } else if (data?.user) {
+        // Cập nhật profile thông tin điện thoại, zalo, role seller
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email,
+          full_name: fullName,
+          phone,
+          zalo,
+          role: 'seller'
+        });
+        alert("Đăng ký thành công!");
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) alert("Lỗi đăng nhập: " + error.message);
+    }
+    setLoading(false);
+  };
+
+  // Lấy danh sách sản phẩm của tôi
+  const fetchMyProducts = async (userId) => {
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('seller_id', userId)
       .order('created_at', { ascending: false });
-    
-    if (error) console.error('Lỗi lấy sản phẩm:', error);
-    else setProducts(data);
+
+    if (!error) setProducts(data || []);
   };
 
-  const handleAuth = async (e) => {
+  // Đăng sản phẩm mới
+  const handleAddProduct = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      if (isRegistering) {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName, phone: phone, role: 'seller' }
-          }
-        });
-        if (error) throw error;
-        alert('Đăng ký thành công! Vui lòng kiểm tra email (nếu có cấu hình) hoặc đăng nhập.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-    } catch (error) {
-      alert(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!imageFile) return alert("Vui lòng chọn 1 hình ảnh sản phẩm!");
 
-  const handleUploadProduct = async (e) => {
-    e.preventDefault();
-    if (!imageFile) return alert('Vui lòng chọn ảnh sản phẩm');
-
-    setLoading(true);
+    setUploading(true);
     try {
-      // 1. Upload ảnh lên Storage
+      // 1. Upload ảnh lên Supabase Storage
       const fileExt = imageFile.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${session.user.id}/${fileName}`;
+      const fileName = `${Date.now()}_${Math.random()}.${fileExt}`;
+      const filePath = `public/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('product-images')
@@ -99,17 +99,17 @@ const SellerPage = () => {
 
       if (uploadError) throw uploadError;
 
-      // 2. Lấy URL công khai
+      // Lấy URL công khai của ảnh
       const { data: { publicUrl } } = supabase.storage
         .from('product-images')
         .getPublicUrl(filePath);
 
-      // 3. Lưu thông tin vào Database
+      // 2. Lưu thông tin vào CSDL
       const { error: insertError } = await supabase.from('products').insert([
         {
           seller_id: session.user.id,
           title,
-          price: parseFloat(price),
+          price: Number(price),
           description,
           image_url: publicUrl
         }
@@ -117,177 +117,146 @@ const SellerPage = () => {
 
       if (insertError) throw insertError;
 
-      alert('Đăng sản phẩm thành công!');
-      // Reset form
-      setTitle(''); setPrice(''); setDescription(''); setImageFile(null);
-      fetchProducts(session.user.id);
-    } catch (error) {
-      alert(error.message);
+      alert("Đăng sản phẩm thành công!");
+      setTitle('');
+      setPrice('');
+      setDescription('');
+      setImageFile(null);
+      fetchMyProducts(session.user.id);
+    } catch (err) {
+      alert("Lỗi đăng sản phẩm: " + err.message);
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
-  // --- GIAO DIỆN CHƯA ĐĂNG NHẬP ---
+  // --- NẾU CHƯA ĐĂNG NHẬP ---
   if (!session) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-slate-800">Kênh Người Bán</h1>
-            <p className="text-slate-500">{isRegistering ? 'Tạo tài khoản bán hàng mới' : 'Đăng nhập vào hệ thống quản lý'}</p>
-          </div>
+          <Link to="/" className="inline-flex items-center text-sm text-slate-500 hover:text-slate-800 mb-6 transition">
+            <ArrowLeft className="w-4 h-4 mr-1" /> Trang chủ
+          </Link>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">
+            {isSignUp ? 'Đăng ký Tài khoản Người Bán' : 'Đăng nhập Người Bán'}
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">Quản lý gian hàng và tải sản phẩm lên hệ thống.</p>
 
           <form onSubmit={handleAuth} className="space-y-4">
-            {isRegistering && (
+            {isSignUp && (
               <>
-                <div className="relative">
-                  <User className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-                  <input
-                    type="text" placeholder="Họ và tên" required
-                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={fullName} onChange={(e) => setFullName(e.target.value)}
-                  />
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Họ và Tên</label>
+                  <input required type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Nguyễn Văn A" />
                 </div>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-                  <input
-                    type="text" placeholder="Số điện thoại / Zalo" required
-                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={phone} onChange={(e) => setPhone(e.target.value)}
-                  />
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Số điện thoại</label>
+                  <input required type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="0901234567" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Link Zalo (hoặc SĐT Zalo)</label>
+                  <input required type="text" value={zalo} onChange={e => setZalo(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="0901234567" />
                 </div>
               </>
             )}
-            <input
-              type="email" placeholder="Email" required
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={email} onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              type="password" placeholder="Mật khẩu" required
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={password} onChange={(e) => setPassword(e.target.value)}
-            />
-            <button
-              disabled={loading}
-              className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold hover:bg-indigo-700 transition flex justify-center items-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" /> : (isRegistering ? 'Đăng ký ngay' : 'Đăng nhập')}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="seller@example.com" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu</label>
+              <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="••••••••" />
+            </div>
+
+            <button disabled={loading} type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-emerald-200">
+              {loading ? 'Đang xử lý...' : isSignUp ? 'Đăng Ký Người Bán' : 'Đăng Nhập'}
             </button>
           </form>
 
-          <button
-            onClick={() => setIsRegistering(!isRegistering)}
-            className="w-full mt-4 text-sm text-indigo-600 hover:underline"
-          >
-            {isRegistering ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký ngay'}
-          </button>
+          <div className="mt-6 text-center text-sm">
+            <button onClick={() => setIsSignUp(!isSignUp)} className="text-emerald-600 font-medium hover:underline">
+              {isSignUp ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký ngay'}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- GIAO DIỆN DASHBOARD (ĐÃ ĐĂNG NHẬP) ---
+  // --- NẾU ĐÃ ĐĂNG NHẬP ---
   return (
-    <div className="min-h-screen bg-slate-100 pb-12">
-      {/* Topbar */}
-      <nav className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-indigo-600 text-xl">
-            <LayoutDashboard /> Dashboard Seller
-          </div>
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="flex items-center gap-2 text-slate-600 hover:text-red-600 transition"
-          >
-            <LogOut size={20} /> <span className="hidden sm:inline">Đăng xuất</span>
+    <div className="min-h-screen bg-slate-50">
+      <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center space-x-3">
+          <Link to="/" className="text-slate-400 hover:text-slate-600">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Package className="w-6 h-6 text-emerald-600" /> Kênh Người Bán
+          </h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600 font-medium hidden sm:inline">{session.user.email}</span>
+          <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1 text-sm text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition">
+            <LogOut className="w-4 h-4" /> Đăng xuất
           </button>
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto px-4 mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Cột trái: Form đăng bài */}
-        <div className="lg:col-span-1">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <PlusCircle className="text-indigo-600" /> Đăng sản phẩm mới
-            </h2>
-            <form onSubmit={handleUploadProduct} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">Tên sản phẩm</label>
-                <input
-                  type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">Giá (VNĐ)</label>
-                <input
-                  type="number" required value={price} onChange={(e) => setPrice(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">Mô tả</label>
-                <textarea
-                  rows="3" value={description} onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                ></textarea>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">Hình ảnh</label>
-                <div className="relative border-2 border-dashed border-slate-300 rounded-lg p-4 hover:border-indigo-500 transition text-center">
-                  <input
-                    type="file" accept="image/*" required
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    onChange={(e) => setImageFile(e.target.files[0])}
-                  />
-                  {imageFile ? (
-                    <p className="text-xs text-emerald-600 font-medium">{imageFile.name}</p>
-                  ) : (
-                    <div className="flex flex-col items-center text-slate-400">
-                      <UploadCloud size={30} />
-                      <span className="text-xs mt-2">Nhấn để chọn ảnh</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <button
-                disabled={loading}
-                className="w-full bg-slate-900 text-white py-2.5 rounded-lg font-bold hover:bg-slate-800 transition flex justify-center items-center gap-2"
-              >
-                {loading ? <Loader2 className="animate-spin" /> : 'Đăng Sản Phẩm'}
-              </button>
-            </form>
-          </div>
+      <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Form Đăng Bài */}
+        <div className="lg:col-span-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-fit">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <PlusCircle className="w-5 h-5 text-emerald-600" /> Đăng Sản Phẩm Mới
+          </h2>
+          <form onSubmit={handleAddProduct} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tên Sản Phẩm</label>
+              <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ví dụ: Áo sơ mi nam Linen" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Giá (VNĐ)</label>
+              <input required type="number" value={price} onChange={e => setPrice(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="250000" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả sản phẩm</label>
+              <textarea rows="3" value={description} onChange={e => setDescription(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Mô tả chi tiết về tình trạng, kích thước..."></textarea>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Hình ảnh sản phẩm</label>
+              <input required type="file" accept="image/*" onChange={e => setImageFile(e.target.files[0])} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
+            </div>
+
+            <button disabled={uploading} type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 rounded-lg transition">
+              {uploading ? 'Đang tải lên...' : 'Đăng Bài Ngay'}
+            </button>
+          </form>
         </div>
 
-        {/* Cột phải: Danh sách sản phẩm */}
+        {/* Danh Sách Đã Đăng */}
         <div className="lg:col-span-2">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <Package className="text-indigo-600" /> Sản phẩm của bạn ({products.length})
-          </h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-4">Sản Phẩm Đã Đăng ({products.length})</h2>
           {products.length === 0 ? (
-            <div className="bg-white p-12 rounded-xl text-center border border-dashed border-slate-300">
-              <ImageIcon className="mx-auto text-slate-300 mb-2" size={48} />
-              <p className="text-slate-500">Bạn chưa có sản phẩm nào đang bán.</p>
+            <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-slate-300 text-slate-400">
+              Bạn chưa có sản phẩm nào. Hãy đăng sản phẩm đầu tiên!
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {products.map((item) => (
-                <div key={item.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex gap-4">
-                  <img 
-                    src={item.image_url} 
-                    alt={item.title} 
-                    className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
-                  />
-                  <div className="flex flex-col justify-between overflow-hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {products.map(product => (
+                <div key={product.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col">
+                  <img src={product.image_url} alt={product.title} className="w-full h-48 object-cover" />
+                  <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
-                      <h3 className="font-bold text-slate-800 truncate">{item.title}</h3>
-                      <p className="text-indigo-600 font-bold text-sm">{parseFloat(item.price).toLocaleString()}đ</p>
+                      <h3 className="font-bold text-slate-800 text-base line-clamp-1">{product.title}</h3>
+                      <p className="text-emerald-600 font-semibold text-lg mt-1">{product.price.toLocaleString()} VNĐ</p>
+                      <p className="text-slate-500 text-sm mt-2 line-clamp-2">{product.description}</p>
                     </div>
-                    <p className="text-xs text-slate-500 line-clamp-2">{item.description}</p>
                   </div>
                 </div>
               ))}
@@ -297,6 +266,4 @@ const SellerPage = () => {
       </main>
     </div>
   );
-};
-
-export default SellerPage;
+}
