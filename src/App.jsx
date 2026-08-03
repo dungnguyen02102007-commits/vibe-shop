@@ -1,9 +1,7 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
-
-// Component tạm thời cho các trang khác
-const SellerPage = () => <div className="p-10 text-center h-screen bg-gray-50"> <h1 className="text-2xl font-bold">Khu vực Người Bán</h1><p>Đang phát triển...</p> </div>;
-const BuyerPage = () => <div className="p-10 text-center h-screen bg-gray-50"> <h1 className="text-2xl font-bold">Khu vực Người Mua</h1><p>Đang phát triển...</p> </div>;
+import SellerPage from './pages/SellerPage';
+import BuyerPage from './pages/BuyerPage';
 
 function App() {
   return (
@@ -12,6 +10,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/seller" element={<SellerPage />} />
         <Route path="/buyer" element={<BuyerPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );
